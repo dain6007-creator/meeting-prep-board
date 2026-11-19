@@ -7,7 +7,7 @@
 <title>고객 미팅 준비판</title>
 <script src="config.js"></script>
 <style>
-/* Layout: 메뉴 줄(홈·할 일·미팅 기록·고객 + 미팅 고르기) → 홈: 미팅 띠(D-day) + 숫자 3칸 → 오늘 챙길 일 · 최근 기록. 할 일: 한 줄 목록. 미팅 기록: 녹음·회의록·파일 → AI 요약·공지·보고. 고객: 카드 목록 */
+/* Layout: 메뉴 줄(홈·미팅 기록·기록함·할 일·고객 + 미팅 고르기). 기록함: 날짜별 묶음, 줄을 누르면 펼침. → 홈: 미팅 띠(D-day) + 숫자 3칸 → 오늘 챙길 일 · 최근 기록. 할 일: 한 줄 목록. 미팅 기록: 녹음·회의록·파일 → AI 요약·공지·보고. 고객: 카드 목록 */
 :root{
   --bg:#f3f5f8; --surface:#ffffff; --surface-2:#eef1f6; --ink:#151a24; --ink-2:#4a5263; --muted:#7b8395;
   --line:#e2e6ee; --line-2:#c9d0dd;
@@ -157,6 +157,22 @@ main .wrap{padding-block:20px 48px}
 .rtag{font-size:11.5px;font-weight:700;border-radius:999px;padding:2px 9px;background:var(--crit-soft);color:var(--crit)}
 .rtag.memo{background:var(--accent-soft);color:var(--accent)}
 .rtag.file{background:var(--good-soft);color:var(--good)}
+/* 기록함 */
+.dgrp{font-size:14px;font-weight:800;margin:20px 0 4px;display:flex;align-items:center;gap:8px}
+#arc-list .dgrp:first-child{margin-top:4px}
+.dgrp .n{font-size:11px;font-weight:700;border-radius:999px;padding:0 7px;background:var(--surface-2);color:var(--ink-2)}
+.arow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:4px 12px;align-items:center;width:100%;padding:12px 10px;border:0;border-top:1px solid var(--line);background:none;font:inherit;color:inherit;text-align:left;cursor:pointer;border-radius:0}
+.arow:hover,.arow[aria-expanded="true"]{background:var(--surface-2)}
+.arow .at{font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.arow .amt{font-weight:400;font-size:12px;color:var(--muted);margin-left:4px}
+.arow .am{font-size:12px;color:var(--muted);white-space:nowrap}
+.arow .am .ok{color:var(--good);font-weight:700}
+.arow .as{grid-column:2/-1;font-size:13px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.arc-open{padding:2px 10px 14px;background:var(--surface-2);border-radius:0 0 12px 12px}
+.arc-open .ritem{padding-top:8px}
+.arc-open .msgbox,.arc-open .rtext{background:var(--surface)}
+#arc-q{width:200px}
+@media (max-width:560px){ .arow{grid-template-columns:auto minmax(0,1fr)} .arow .am{grid-column:2} #arc-q{width:100%} }
 /* 고객 */
 .clist{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
 .ccard{border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:var(--surface);display:flex;flex-direction:column;gap:3px;text-align:left;font:inherit;color:inherit;min-width:0}
@@ -212,8 +228,9 @@ footer.foot .wrap{padding-block:18px;display:flex;flex-wrap:wrap;gap:6px 18px;ju
     <a class="brand" href="#home"><span class="mark">MP</span>고객 미팅 준비판</a>
     <nav class="menu" aria-label="메뉴">
       <a href="#home" data-v="home">홈</a>
-      <a href="#tasks" data-v="tasks">할 일</a>
       <a href="#record" data-v="record">미팅 기록</a>
+      <a href="#archive" data-v="archive">기록함</a>
+      <a href="#tasks" data-v="tasks">할 일</a>
       <a href="#customers" data-v="customers">고객</a>
     </nav>
     <span class="mode" id="h-mode" role="status" hidden></span>
@@ -239,7 +256,7 @@ footer.foot .wrap{padding-block:18px;display:flex;flex-wrap:wrap;gap:6px 18px;ju
         <div id="home-today"></div>
       </div>
       <div class="card">
-        <div class="chead"><div><h2>최근 미팅 기록</h2><p class="desc">녹음·회의록과 AI 요약</p></div><a class="btn btn-sm" href="#record">전체 보기</a></div>
+        <div class="chead"><div><h2>최근 미팅 기록</h2><p class="desc">녹음·회의록과 AI 요약</p></div><a class="btn btn-sm" href="#archive">기록함</a></div>
         <div id="home-recs"></div>
       </div>
     </div>
@@ -295,9 +312,15 @@ footer.foot .wrap{padding-block:18px;display:flex;flex-wrap:wrap;gap:6px 18px;ju
       </div>
     </div>
     <div class="card">
-      <div class="chead"><div><h2>기록 <span class="acc" id="rec-count"></span></h2><p class="desc">「AI로 정리」를 누르면 요약 · 공지 · 보고와 할 일이 만들어집니다. 할 일은 골라서 넣습니다.</p></div></div>
+      <div class="chead"><div><h2>방금 넣은 기록</h2><p class="desc">「AI로 정리」를 누르면 요약 · 공지 · 보고와 할 일이 만들어집니다. 할 일은 골라서 넣습니다.</p></div><a class="btn btn-sm" href="#archive" id="rec-more">기록함 열기</a></div>
       <div id="rec-list"></div>
     </div>
+  </section>
+
+  <!-- 기록함 -->
+  <section class="view" id="v-archive" aria-label="기록함" hidden>
+    <div class="sec-h"><h2 id="arc-h">기록함</h2><div class="btnrow"><div class="seg" id="arc-scope" role="group" aria-label="범위"><button type="button" data-scope="cur">이번 미팅</button><button type="button" data-scope="all">모든 미팅</button></div><label class="vh" for="arc-q">검색</label><input type="search" id="arc-q" placeholder="제목·내용 검색"></div></div>
+    <div class="card"><p class="desc">날짜별로 최근 것이 위에 있습니다. 줄을 누르면 요약 · 공지 · 보고와 원문이 펼쳐집니다.</p><div id="arc-list"></div></div>
   </section>
 
   <!-- 고객 -->
@@ -554,9 +577,13 @@ const RV = {};   // 기록별 화면 상태: tab('sum'|'notice'|'report'), text,
 const AICTL = {};
 function renderRecord(M){
   $('rec-h').textContent = M.cur ? `미팅 기록 · ${M.cur.title}` : '미팅 기록';
-  $('rec-count').textContent = M.records.length ? `${M.records.length}개` : '';
+  $('rec-more').textContent = M.records.length > 1 ? `지난 기록 ${M.records.length - 1}개 · 기록함에서 보기` : '기록함 열기';
+  $('arc-list').innerHTML = '';   // 같은 기록이 두 화면에 함께 그려지지 않게
+  $('rec-list').innerHTML = M.records.length ? recCard(M.records[0]) : '<p class="empty">아직 기록이 없습니다. 위에서 녹음하거나 회의록·파일을 넣어 주세요.</p>';
+}
+function recCard(r0){
   const ro = !canEdit(), bridge = S.plat === 'sheet';
-  $('rec-list').innerHTML = M.records.map(r0 => {
+  {
     const v = RV[r0.id] = RV[r0.id] || {tab:'sum', text:false};
     const r = (!r0.summary && v.local) ? Object.assign({}, r0, v.local) : r0;
     const busy = !!AICTL[r.id];
@@ -581,8 +608,34 @@ function renderRecord(M){
       ${body}${draft}
       <pre class="rtext"${v.text ? '' : ' hidden'}>${esc(r.text || '')}</pre>
     </article>`;
-  }).join('') || '<p class="empty">아직 기록이 없습니다. 위에서 녹음하거나 회의록을 넣어 주세요.</p>';
+  }
 }
+
+/* ---------- 기록함: 날짜별로 모아 보기 ---------- */
+const AF = {scope:'cur', q:'', open:null};
+const recDay = r => { const d = new Date(r.at || r.created); return isNaN(d) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate()); };
+function renderArchive(M){
+  $('rec-list').innerHTML = '';
+  document.querySelectorAll('#arc-scope button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.scope === AF.scope)));
+  const mById = Object.fromEntries(M.meetings.map(m => [m.id, m]));
+  const q = AF.q.toLowerCase();
+  const list = (AF.scope === 'cur' ? M.records : S.records.slice().sort((a, b) => str(b.at).localeCompare(str(a.at))))
+    .filter(r => !q || [r.title, r.summary, r.text].some(v => str(v).toLowerCase().includes(q)));
+  $('arc-h').textContent = AF.scope === 'cur' && M.cur ? `기록함 · ${M.cur.title}` : '기록함 · 모든 미팅';
+  const groups = [];
+  list.forEach(r => { const d = recDay(r), k = d ? ymd(d) : '날짜 없음'; let g = groups[groups.length - 1]; if (!g || g.k !== k){ g = {k, d, items:[]}; groups.push(g); } g.items.push(r); });
+  const T = M.T;
+  $('arc-list').innerHTML = groups.map(g => {
+    const rel = g.d ? (diff(T, g.d) === 0 ? ' · 오늘' : diff(T, g.d) === 1 ? ' · 어제' : '') : '';
+    return `<h3 class="dgrp">${esc(g.d ? fmt(g.d) : g.k)}${rel}<span class="n">${g.items.length}</span></h3>` + g.items.map(r => {
+      const open = AF.open === r.id, m = mById[r.meetingId];
+      const st = AICTL[r.id] ? '정리 중' : r.summary ? (r.applied ? 'AI 정리 · 할 일 반영' : 'AI 정리됨') : '정리 전';
+      return `<button type="button" class="arow" data-open-rec="${esc(r.id)}" aria-expanded="${open}"><span class="rtag${r.kind === '녹음' ? '' : r.kind === '자료' ? ' file' : ' memo'}">${esc(r.kind || '기록')} ${esc(r.seq || '')}</span><span class="at">${esc(r.title || '미팅 기록')}${AF.scope === 'all' && m ? ` <span class="amt">${esc(m.title)}</span>` : ''}</span><span class="am">${esc(fmtDT(r.at).split(' ')[1] || '')} · <span class="${r.summary ? 'ok' : ''}">${st}</span></span><span class="as">${esc(r.summary || str(r.text).slice(0, 120) || '내용 없음')}</span></button>${open ? `<div class="arc-open">${recCard(r)}</div>` : ''}`;
+    }).join('');
+  }).join('') || `<p class="empty">${q ? '찾는 기록이 없습니다.' : '아직 기록이 없습니다. 「미팅 기록」에서 녹음하거나 회의록·파일을 넣어 주세요.'}</p>`;
+}
+$('arc-q').addEventListener('input', e => { AF.q = e.target.value.trim(); renderView('archive'); });
+document.querySelectorAll('#arc-scope button').forEach(b => b.addEventListener('click', () => { AF.scope = b.dataset.scope; renderView('archive'); }));
 function draftHtml(id, tasks, ro){
   const have = new Set(S.requests.map(x => str(x.title)));
   const rows = tasks.map((t, i) => { const dup = have.has(str(t.title)); return `<div class="dt"><input type="checkbox" class="chk" id="d-${esc(id)}-c${i}" ${dup ? '' : 'checked'} aria-label="넣기"><input class="dt-t" id="d-${esc(id)}-t${i}" value="${esc(t.title)}" aria-label="할 일"><input class="dt-o" id="d-${esc(id)}-o${i}" list="dl-owners" value="${esc(t.owner || '')}" placeholder="담당" aria-label="담당"><input type="date" id="d-${esc(id)}-d${i}" value="${esc(t.due || '')}" aria-label="기한"></div>`; }).join('');
@@ -592,14 +645,14 @@ function draftHtml(id, tasks, ro){
 async function applyDraft(id){
   const v = RV[id] || {}, r = S.records.find(x => x.id === id);
   const tasks = v.draft || (r && r.extract && r.extract.tasks) || []; if (!tasks.length) return;
-  const M0 = build(); if (!M0.cur) return;
-  let no = M0.tasks.reduce((m, x) => Math.max(m, Number(x.no) || 0), 0) + 1, n = 0;
+  const M0 = build(); const mid = (r && r.meetingId) || M0.mid; if (!mid) return;
+  let no = S.requests.filter(x => x.meetingId === mid).reduce((m, x) => Math.max(m, Number(x.no) || 0), 0) + 1, n = 0;
   const g = k => $(`d-${id}-${k}`);
   const ok = await save(async () => {
     for (let i = 0; i < tasks.length; i++){
       if (!g('c' + i) || !g('c' + i).checked) continue;
       const title = g('t' + i).value.trim(); if (!title) continue;
-      await store.add('requests', {meetingId: M0.mid, no: no++, title, owner: g('o' + i).value.trim(), due: g('d' + i).value || '', status:'진행 중', done:'', src:'ai'}); n++;
+      await store.add('requests', {meetingId: mid, no: no++, title, owner: g('o' + i).value.trim(), due: g('d' + i).value || '', status:'진행 중', done:'', src:'ai'}); n++;
     }
     if (r) await store.update('records', id, {applied: true});
   });
@@ -607,7 +660,8 @@ async function applyDraft(id){
 }
 
 /* AI 정리 */
-function aiPrompt(M0, r){
+function aiPrompt(M0, r, mt){
+  mt = mt || M0.cur; M0 = Object.assign({}, M0, {cur: mt});
   const cs = M0.cur.contactTxt || '없음';
   const what = r.kind === '자료' ? `자료 파일 「${r.title || ''}」의 내용(${fmtDT(r.at)}에 넣음)` : `${r.kind || '기록'}(제목: ${r.title || ''}, ${fmtDT(r.at)})`;
   return `너는 고객 미팅(국내·해외)을 준비하는 우리 팀을 돕는 비서다. 아래는 「${M0.cur.title}」 미팅의 ${what}이다. JSON 객체 하나로만 답한다. 원문이 일본어·영어여도 결과는 한국어로 쓴다.
@@ -640,11 +694,11 @@ function normAI(x){
 async function runAI(id){
   const r = S.records.find(x => x.id === id); if (!r || !S.sample) return;
   if (AICTL[id]){ AICTL[id].abort(); return; }
-  const M0 = build(); if (!M0.cur) return;
+  const M0 = build(); const mt = M0.meetings.find(m => m.id === r.meetingId) || M0.cur; if (!mt) return;
   const ctl = AICTL[id] = new AbortController();
   render();
   try {
-    const d = normAI(await S.sample.json(aiPrompt(M0, r), {signal: ctl.signal, cache: {gcTime: 12 * 3600 * 1000}}));
+    const d = normAI(await S.sample.json(aiPrompt(M0, r, mt), {signal: ctl.signal, cache: {gcTime: 12 * 3600 * 1000}}));
     RV[id] = Object.assign(RV[id] || {}, {tab:'sum', draft: d.tasks, hideDraft: false});
     if (canEdit()){
       await save(() => store.update('records', id, {summary: d.summary, notice: d.notice, report: d.report, extract: {tasks: d.tasks}, applied: false, aiAt: new Date().toISOString()}));
@@ -876,9 +930,10 @@ document.addEventListener('click', e => {
   if ((b = t.closest('button[data-edit-cust]'))) return editCustomer(b.dataset.editCust);
   if ((b = t.closest('[data-ai]'))) return runAI(b.dataset.ai);
   if ((b = t.closest('[data-apply]'))) return applyDraft(b.dataset.apply);
-  if ((b = t.closest('[data-close-draft]'))){ const v = RV[b.dataset.closeDraft] = RV[b.dataset.closeDraft] || {}; v.draft = null; v.hideDraft = true; renderView('record'); return; }
-  if ((b = t.closest('[data-tab]'))){ const [id, k] = b.dataset.tab.split(':'); (RV[id] = RV[id] || {}).tab = k; renderView('record'); return; }
-  if ((b = t.closest('[data-toggle-text]'))){ const v = RV[b.dataset.toggleText] = RV[b.dataset.toggleText] || {}; v.text = !v.text; renderView('record'); return; }
+  if ((b = t.closest('[data-close-draft]'))){ const v = RV[b.dataset.closeDraft] = RV[b.dataset.closeDraft] || {}; v.draft = null; v.hideDraft = true; renderView(CUR); return; }
+  if ((b = t.closest('[data-tab]'))){ const [id, k] = b.dataset.tab.split(':'); (RV[id] = RV[id] || {}).tab = k; renderView(CUR); return; }
+  if ((b = t.closest('[data-toggle-text]'))){ const v = RV[b.dataset.toggleText] = RV[b.dataset.toggleText] || {}; v.text = !v.text; renderView(CUR); return; }
+  if ((b = t.closest('[data-open-rec]'))){ const id = b.dataset.openRec; AF.open = AF.open === id ? null : id; renderView('archive'); return; }
   if ((b = t.closest('[data-copy-rec]'))){
     const id = b.dataset.copyRec, r = S.records.find(x => x.id === id), v = RV[id] || {tab:'sum'};
     const src = (r && r.summary) ? r : Object.assign({}, r, v.local);
@@ -898,9 +953,9 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') ['m-form','m
 let tt; function toast(t){ const el = $('toast'); el.textContent = t; el.hidden = false; clearTimeout(tt); tt = setTimeout(() => { el.hidden = true; }, 3200); }
 
 /* ---------- 렌더·이동 ---------- */
-const VIEWS = ['home','tasks','record','customers'];
+const VIEWS = ['home','record','archive','tasks','customers'];
 let CUR = 'home', M = null, rq = 0;
-function renderView(v){ if (!M) return; ({home: renderHome, tasks: renderTasks, record: renderRecord, customers: renderCustomers})[v](M); applyWrite(); }
+function renderView(v){ if (!M) return; ({home: renderHome, record: renderRecord, archive: renderArchive, tasks: renderTasks, customers: renderCustomers})[v](M); applyWrite(); }
 function render(){ M = build(); renderNav(M); renderView(CUR); renderRecState(); }
 function scheduleRender(){ if (rq) return; rq = requestAnimationFrame(() => { rq = 0; render(); }); }
 function show(v){
