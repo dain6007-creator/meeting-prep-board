@@ -15,13 +15,10 @@
  * 탭마다 1행 머리글 이름(아래 SCHEMA 두 번째 값)은 바꾸지 마세요. 열 순서는 바꿔도 됩니다.
  */
 const SCHEMA = {
-  meetings: {tab: "미팅", cols: [["id", "ID"], ["title", "미팅 이름"], ["company", "고객 회사"], ["customerIds", "참석 고객ID", "json"], ["kind", "미팅 구분"], ["start", "시작일"], ["end", "끝 날짜"], ["time", "시간"], ["place", "장소"], ["lead", "준비 총괄"], ["status", "상태"], ["goals", "목표", "json"], ["created", "만든 시각"]]},
+  meetings: {tab: "미팅", cols: [["id", "ID"], ["title", "미팅 이름"], ["company", "고객 회사"], ["customerIds", "참석 고객ID", "json"], ["contact", "고객 담당자"], ["kind", "미팅 구분"], ["start", "시작일"], ["end", "끝 날짜"], ["time", "시간"], ["place", "장소"], ["lead", "준비 총괄"], ["status", "상태"], ["goals", "목표", "json"], ["created", "만든 시각"]]},
   customers: {tab: "고객", cols: [["id", "ID"], ["company", "회사"], ["name", "성함"], ["title", "직급"], ["dept", "부서"], ["phone", "연락처"], ["email", "이메일"], ["country", "국가"], ["memo", "메모"], ["created", "만든 시각"]]},
   requests: {tab: "팀 할 일", cols: [["id", "ID"], ["meetingId", "미팅ID"], ["no", "번호", "num"], ["group", "준비 항목"], ["title", "할 일"], ["owner", "담당"], ["asked", "요청일"], ["due", "기한"], ["done", "회신일"], ["status", "상태"], ["via", "경로"], ["note", "비고"], ["prevStatus", "이전 상태"], ["src", "출처"], ["created", "만든 시각"]]},
-  questions: {tab: "예상 질문", cols: [["id", "ID"], ["meetingId", "미팅ID"], ["no", "번호", "num"], ["cat", "분류"], ["q", "질문"], ["owner", "답변 담당"], ["status", "상태"], ["answer", "답변 요지"], ["src", "출처"], ["created", "만든 시각"]]},
-  schedule: {tab: "일정", cols: [["id", "ID"], ["meetingId", "미팅ID"], ["date", "날짜"], ["end", "끝 날짜"], ["title", "일정"], ["kind", "구분"], ["src", "출처"], ["created", "만든 시각"]]},
-  followups: {tab: "고객 약속", cols: [["id", "ID"], ["meetingId", "미팅ID"], ["customerId", "고객ID"], ["date", "날짜"], ["time", "시간"], ["title", "약속 내용"], ["owner", "우리 담당"], ["status", "상태"], ["note", "메모"], ["src", "출처"], ["created", "만든 시각"]]},
-  records: {tab: "기록", cols: [["id", "ID"], ["meetingId", "미팅ID"], ["seq", "순번", "num"], ["kind", "종류"], ["title", "제목"], ["at", "시각"], ["durationSec", "길이(초)", "num"], ["lang", "언어"], ["text", "내용"], ["summary", "일반 요약"], ["key5", "중요 요약", "json"], ["extract", "뽑은 항목", "json"], ["applied", "반영 여부", "bool"], ["aiAt", "AI 정리 시각"], ["created", "만든 시각"]]}
+  records: {tab: "기록", cols: [["id", "ID"], ["meetingId", "미팅ID"], ["seq", "순번", "num"], ["kind", "종류"], ["title", "제목"], ["at", "시각"], ["durationSec", "길이(초)", "num"], ["lang", "언어"], ["text", "내용"], ["summary", "일반 요약"], ["notice", "공지"], ["report", "보고"], ["key5", "중요 요약", "json"], ["extract", "뽑은 항목", "json"], ["applied", "반영 여부", "bool"], ["aiAt", "AI 정리 시각"], ["created", "만든 시각"]]}
 };
 const PFX = {customers: 'c', meetings: 'm', requests: 'r', questions: 'q', schedule: 's', followups: 'f', records: 'rc'};
 const TIME_KEYS = ['created', 'at', 'aiAt'];
@@ -142,8 +139,8 @@ function tab_(ss, cache, col) {
   const width = Math.max(sh.getLastColumn(), 1);
   const head = sh.getRange(1, 1, 1, width).getDisplayValues()[0].map(function (h) { return String(h).trim(); });
   const byKey = {};
-  def.cols.forEach(function (c) { const i = head.indexOf(c[1]); if (i >= 0) byKey[c[0]] = i + 1; });
-  head.forEach(function (h, i) { if (h && !def.cols.some(function (c) { return c[1] === h; }) && !byKey[h]) byKey[h] = i + 1; });
+  def.cols.forEach(function (c) { var i = head.indexOf(c[1]); if (i < 0) i = head.indexOf(c[0]); if (i >= 0) byKey[c[0]] = i + 1; });
+  head.forEach(function (h, i) { if (h && !def.cols.some(function (c) { return c[1] === h || c[0] === h; }) && !byKey[h]) byKey[h] = i + 1; });
   if (!byKey.id) throw new Error(def.tab + ' 탭 1행에 「ID」 머리글이 없습니다');
   const n = sh.getLastRow() - 1;
   const ids = n > 0 ? sh.getRange(2, byKey.id, n, 1).getDisplayValues().map(function (r) { return String(r[0]).trim(); }) : [];
