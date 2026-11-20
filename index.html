@@ -401,8 +401,8 @@ const API = {
     const j = await r.json(); if (!j || !j.ok) throw {code: (j && j.code) || 'server'};
     return j.data || {};
   },
-  async post(body){
-    const r = await fetch(API.url, {method:'POST', body: JSON.stringify(body)});
+  async post(body, signal){
+    const r = await fetch(API.url, {method:'POST', body: JSON.stringify(body), signal});
     const j = await r.json(); if (!j || !j.ok) throw {code: (j && j.code) || 'server'};
     return j;
   }
@@ -709,7 +709,7 @@ async function runAI(id){
     }
   } catch(e){
     const c = e && e.code;
-    toast({cancelled:'멈췄습니다.', not_granted:'AI 사용을 허용하지 않아 정리할 수 없습니다.', sampling_disabled:'이 계정에서는 AI 정리를 쓸 수 없습니다.', rate_limited:'요청이 많습니다. 잠시 뒤 다시 눌러 주세요.', invalid_json:'정리 결과를 읽지 못했습니다. 다시 눌러 주세요.', prompt_too_large:'글이 너무 깁니다. 나눠서 넣어 주세요.'}[c] || '정리하지 못했습니다. 다시 눌러 주세요.');
+    toast({cancelled:'멈췄습니다.', not_granted:'AI 사용을 허용하지 않아 정리할 수 없습니다.', sampling_disabled:'이 계정에서는 AI 정리를 쓸 수 없습니다.', rate_limited:'요청이 많습니다. 잠시 뒤 다시 눌러 주세요.', invalid_json:'정리 결과를 읽지 못했습니다. 다시 눌러 주세요.', ai_blocked:'AI가 이 글을 정리하지 않았습니다. 내용을 확인해 주세요.', bad_key:'편집 비밀번호가 바뀌었습니다. 「편집하기」로 다시 넣어 주세요.', prompt_too_large:'글이 너무 깁니다. 나눠서 넣어 주세요.'}[c] || '정리하지 못했습니다. 다시 눌러 주세요.');
   } finally { delete AICTL[id]; render(); }
 }
 
@@ -1017,6 +1017,25 @@ function claudeBridge(){
     });
   }};
 }
+/* 구글 시트 판: Apps Script(Gemini)로 바로 정리. 키가 없거나 실패하면 Claude 복사 방식으로 */
+function sheetAI(){
+  const copy = claudeBridge(); let direct = true;
+  return {async json(prompt, opts){
+    const sig = opts && opts.signal;
+    if (direct && S.key && API.url){
+      try {
+        const j = await API.post({key: S.key, op:'ai', prompt}, sig);
+        try { return parseAnswer(j.text); } catch(e){ throw {code:'invalid_json'}; }
+      } catch(e){
+        if (sig && sig.aborted) throw {code:'cancelled'};
+        const c = e && e.code;
+        if (['rate_limited','prompt_too_large','invalid_json','ai_blocked','bad_key'].includes(c)) throw e;
+        if (c === 'no_ai_key' || c === 'server') direct = false;
+      }
+    }
+    return copy.json(prompt, opts);
+  }};
+}
 function parseAnswer(t){
   t = String(t || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
   const a = t.indexOf('{'), b = t.lastIndexOf('}'); if (a < 0 || b <= a) throw new Error('no json');
@@ -1060,7 +1079,7 @@ function webSpeech(){
   };
 }
 async function initSheet(){
-  S.plat = 'sheet'; S.sample = claudeBridge(); S.dict = webSpeech();
+  S.plat = 'sheet'; S.sample = sheetAI(); S.dict = webSpeech();
   if (S.dict){ wireDictation(S.dict); $('rec-note').textContent = '받아쓰기는 브라우저 음성 인식을 씁니다(Chrome은 구글, Edge는 마이크로소프트 서버에서 글자로 바뀜).'; }
   else $('rec-note').textContent = '이 브라우저에서는 녹음을 쓸 수 없습니다. Chrome이나 Edge에서 열어 주세요.';
   if (CFG.SHEET_URL){ $('foot-sheet').href = CFG.SHEET_URL; $('foot-sheet').hidden = false; }

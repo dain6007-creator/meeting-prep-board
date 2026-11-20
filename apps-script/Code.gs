@@ -4,10 +4,13 @@
  * 읽기  GET  …/exec                 모든 탭을 JSON으로 돌려줌 (주소를 아는 누구나)
  * 쓰기  POST …/exec  {key, op, …}   스크립트 속성 WRITE_KEY 와 key 가 같을 때만
  *       op: ping | add {col,id,data} | update {col,id,data} | del {col,id} | batch {ops:[…]}
+ *           | ai {prompt}  (Gemini로 정리해 {ok, text} 돌려줌. 스크립트 속성 GEMINI_API_KEY 필요)
  *
  * 설치
  *  1. 이 시트에서 확장 프로그램 → Apps Script → 이 코드를 Code.gs 에 붙여 넣고 저장
  *  2. 프로젝트 설정(톱니바퀴) → 스크립트 속성 → 속성 추가: WRITE_KEY = 팀 편집 비밀번호
+ *     AI 바로 정리를 쓰려면 GEMINI_API_KEY = Google AI Studio API 키 (없으면 화면이 Claude 복사 방식으로 정리)
+ *     (선택) GEMINI_MODEL = 모델 이름. 비워 두면 gemini-flash-latest
  *  3. 배포 → 새 배포 → 유형 「웹 앱」 → 실행 계정 「나」 → 액세스 권한 「모든 사용자」 → 배포
  *  4. 나오는 웹 앱 주소(…/exec)를 웹 화면의 config.js 의 API_URL 에 넣음
  *  코드를 고친 뒤에는 배포 → 배포 관리 → 연필 → 버전 「새 버전」 → 배포 (주소는 그대로)
@@ -42,6 +45,7 @@ function doPost(e) {
   if (!key) return out_({ok: false, code: 'no_key_set'});
   if (String(req.key || '') !== key) { Utilities.sleep(700); return out_({ok: false, code: 'bad_key'}); }
   if (req.op === 'ping') return out_({ok: true});
+  if (req.op === 'ai') return out_(ai_(req.prompt));
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(25000)) return out_({ok: false, code: 'busy'});
   try {
@@ -56,6 +60,48 @@ function doPost(e) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/* ---------- AI 정리 (Gemini) ---------- */
+function ai_(prompt) {
+  const props = PropertiesService.getScriptProperties();
+  const apiKey = props.getProperty('GEMINI_API_KEY');
+  if (!apiKey) return {ok: false, code: 'no_ai_key'};
+  prompt = String(prompt || '');
+  if (!prompt) return {ok: false, code: 'bad_prompt'};
+  if (prompt.length > 60000) return {ok: false, code: 'prompt_too_large'};
+  const first = props.getProperty('GEMINI_MODEL') || 'gemini-flash-latest';
+  const models = [first, 'gemini-flash-latest', 'gemini-2.5-flash'].filter(function (m, i, a) { return a.indexOf(m) === i; });
+  var last = {ok: false, code: 'ai_failed'};
+  for (var i = 0; i < models.length; i++) {
+    const res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(models[i]) + ':generateContent', {
+      method: 'post',
+      contentType: 'application/json',
+      headers: {'x-goog-api-key': apiKey},
+      muteHttpExceptions: true,
+      payload: JSON.stringify({
+        contents: [{role: 'user', parts: [{text: prompt}]}],
+        generationConfig: {temperature: 0.2, responseMimeType: 'application/json'}
+      })
+    });
+    const status = res.getResponseCode();
+    var body = {};
+    try { body = JSON.parse(res.getContentText()); } catch (e) { /* 빈 응답 */ }
+    if (status === 200) {
+      const c = body.candidates && body.candidates[0];
+      const text = c && c.content && c.content.parts ? c.content.parts.map(function (p) { return p.thought ? '' : (p.text || ''); }).join('') : '';
+      if (text) return {ok: true, text: text, model: models[i]};
+      last = {ok: false, code: 'ai_blocked'};
+      continue;
+    }
+    if (status === 429) return {ok: false, code: 'rate_limited'};
+    if (status === 400 || status === 401 || status === 403) {
+      const msg = String((body.error && body.error.message) || '');
+      if (/api key/i.test(msg) || status !== 400) return {ok: false, code: 'bad_ai_key'};
+    }
+    last = {ok: false, code: 'ai_failed', status: status};  // 404(모델 없음) 등은 다음 모델로
+  }
+  return last;
 }
 
 /* ---------- 쓰기 ---------- */
