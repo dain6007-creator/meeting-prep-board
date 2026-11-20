@@ -330,7 +330,7 @@ footer.foot .wrap{padding-block:18px;display:flex;flex-wrap:wrap;gap:6px 18px;ju
   </section>
 </div></main>
 
-<footer class="foot"><div class="wrap"><span>고객 미팅 준비판 · 경영지원팀</span><span>화면의 고객·담당·일정은 예시 데이터입니다</span><span class="foot-links"><a id="foot-sheet" href="#" target="_blank" rel="noopener" hidden>구글 시트 열기</a><button type="button" class="linkbtn" id="btn-lock" hidden>편집 잠그기</button></span></div></footer>
+<footer class="foot"><div class="wrap"><span>고객 미팅 준비판 · 경영지원팀</span><span>화면의 고객·담당·일정은 예시 데이터입니다</span><span class="foot-links"><a id="foot-sheet" href="#" target="_blank" rel="noopener" hidden>구글 시트 열기</a><button type="button" class="linkbtn" id="btn-lock" hidden>잠그기</button></span></div></footer>
 
 <datalist id="dl-owners"></datalist>
 
@@ -345,10 +345,10 @@ footer.foot .wrap{padding-block:18px;display:flex;flex-wrap:wrap;gap:6px 18px;ju
 <div class="modal" id="m-key" hidden role="dialog" aria-modal="true" aria-labelledby="mk-h">
   <form class="sheet" id="f-key" autocomplete="off">
     <div class="sheet-h"><h2 id="mk-h">편집 비밀번호</h2><button class="btn" type="button" data-close="m-key">닫기</button></div>
-    <p style="margin:0">보기는 누구나 할 수 있고, 추가·수정·삭제는 팀 비밀번호를 넣은 뒤에 할 수 있습니다. 이 브라우저에서는 다음에 다시 묻지 않습니다.</p>
-    <label class="vh" for="mk-pw">팀 비밀번호</label><input type="password" id="mk-pw" placeholder="팀 비밀번호" autocomplete="current-password">
+    <p style="margin:0" id="mk-desc">추가·수정·삭제는 편집 비밀번호를 넣은 뒤에 할 수 있습니다. 이 브라우저에서는 다음에 다시 묻지 않습니다.</p>
+    <label class="vh" for="mk-pw">비밀번호</label><input type="password" id="mk-pw" placeholder="편집 비밀번호" autocomplete="current-password">
     <div class="row-end"><span class="status-line" id="mk-status"></span><button class="btn btn-primary" type="submit" id="mk-ok">확인</button></div>
-    <p class="acc">여러 사람이 쓰는 PC에서는 다 쓴 뒤 맨 아래 「편집 잠그기」를 눌러 주세요.</p>
+    <p class="acc">여러 사람이 쓰는 PC에서는 다 쓴 뒤 맨 아래 「잠그기」를 눌러 주세요.</p>
   </form>
 </div>
 
@@ -389,16 +389,26 @@ const fmtDur = s => { s = Math.max(0, Math.round(s || 0)); const m = Math.floor(
 /* ---------- 상태 ---------- */
 const CFG = window.MPB_CONFIG || {};
 const COLS = ['meetings','requests','records','customers'];
-const S = {meetings:[], requests:[], records:[], customers:[], loaded:{}, plat:'', mode:'loading', db:null, sample:null, dict:null, canWrite:false, key:null, api:false, sig:'', wseq:0, curId:null};
-try { S.curId = localStorage.getItem('mp.cur'); S.key = localStorage.getItem('mpb.key'); } catch(e){}
+const S = {meetings:[], requests:[], records:[], customers:[], loaded:{}, plat:'', mode:'loading', db:null, sample:null, dict:null, canWrite:false, key:null, rkey:null, keyKind:'edit', askedRead:false, api:false, sig:'', wseq:0, curId:null};
+try { S.curId = localStorage.getItem('mp.cur'); S.key = localStorage.getItem('mpb.key'); S.rkey = localStorage.getItem('mpb.rkey'); } catch(e){}
 function setCur(id){ S.curId = id; try { localStorage.setItem('mp.cur', id); } catch(e){} render(); }
 
 /* ---------- 저장소: Claude(db) 또는 구글 시트(Apps Script) ---------- */
 const API = {
   url: str(CFG.API_URL),
   async load(){
+    /* 보기 비밀번호(없으면 편집 비밀번호)가 있으면 POST로 읽고, 안 되면 GET으로 읽음 */
+    const rk = S.rkey || S.key;
+    if (rk){
+      try { const j = await API.post({key: rk, op:'read'}); if (j.data) return j.data; } catch(e){ /* GET으로 다시 */ }
+    }
     const r = await fetch(API.url + (API.url.includes('?') ? '&' : '?') + 't=' + Date.now(), {cache:'no-store'});
-    const j = await r.json(); if (!j || !j.ok) throw {code: (j && j.code) || 'server'};
+    const j = await r.json();
+    if (j && j.code === 'need_read_key'){
+      if (S.rkey){ S.rkey = null; try { localStorage.removeItem('mpb.rkey'); } catch(e){} }
+      throw {code:'need_read_key'};
+    }
+    if (!j || !j.ok) throw {code: (j && j.code) || 'server'};
     return j.data || {};
   },
   async post(body, signal){
@@ -501,13 +511,15 @@ function renderNav(M){
   const sel = $('sel-meeting');
   sel.innerHTML = M.meetings.length ? M.meetings.map(m => `<option value="${esc(m.id)}"${M.cur && m.id === M.cur.id ? ' selected' : ''}>${esc(m.s0 ? `${m.s0.getMonth()+1}/${m.s0.getDate()}` : '미정')} ${esc(m.title)}${m.isDone ? ' (완료)' : ''}</option>`).join('') : '<option>미팅 없음</option>';
   const a = document.querySelector('.menu a[data-v="tasks"]'); a.innerHTML = '할 일' + (M.over.length ? `<span class="n">${M.over.length}</span>` : '');
-  const sheetMsg = {loading:'시트에서 불러오는 중…', slow:'시트 연결이 늦습니다', offline:'시트에 연결하지 못했습니다. 잠시 뒤 새로 고쳐 주세요', noapi:'시트 연결 주소가 없습니다 (config.js)'};
+  const sheetMsg = {loading:'시트에서 불러오는 중…', slow:'시트 연결이 늦습니다', offline:'시트에 연결하지 못했습니다. 잠시 뒤 새로 고쳐 주세요', noapi:'시트 연결 주소가 없습니다 (config.js)', locked:'보기 비밀번호가 필요합니다'};
   const claudeMsg = {loading:'불러오는 중…', slow:'연결이 늦어 최신 내용이 아닐 수 있습니다', offline:'이 화면에서는 저장되지 않습니다'};
   let mt = ((S.plat === 'claude' ? claudeMsg : sheetMsg)[S.mode]) || '';
   if (!mt && S.plat === 'claude' && S.db && !S.canWrite) mt = '보기 전용';
   $('h-mode').textContent = mt; $('h-mode').hidden = !mt;
-  $('btn-unlock').hidden = !(S.plat === 'sheet' && S.api && !S.key);
-  $('btn-lock').hidden = !(S.plat === 'sheet' && S.key);
+  const locked = S.plat === 'sheet' && S.mode === 'locked';
+  $('btn-unlock').textContent = locked ? '보기 비밀번호' : '편집하기';
+  $('btn-unlock').hidden = !(locked || (S.plat === 'sheet' && S.api && !S.key));
+  $('btn-lock').hidden = !(S.plat === 'sheet' && (S.key || S.rkey));
   $('dl-owners').innerHTML = M.owners.map(o => `<option value="${esc(o)}">`).join('');
 }
 
@@ -518,6 +530,10 @@ function taskRow(t){
 }
 function renderHome(M){
   const m = M.cur;
+  if (S.plat === 'sheet' && S.mode === 'locked'){
+    $('hero').innerHTML = `<section class="hero"><div><div class="chips"><span>잠김</span></div><h1>보기 비밀번호를 넣어 주세요</h1><p class="meta">팀 안에서만 보는 준비판입니다. 위쪽 「보기 비밀번호」를 눌러 넣으면 열립니다.</p></div></section>`;
+    $('stats').innerHTML = ''; $('home-today').innerHTML = ''; $('home-recs').innerHTML = ''; return;
+  }
   if (!m){
     $('hero').innerHTML = `<section class="hero"><div><div class="chips"><span>미팅 없음</span></div><h1>첫 미팅을 만들어 주세요</h1><p class="meta">위쪽 「+ 새 미팅」에서 고객과 날짜를 넣으면 시작됩니다.</p></div></section>`;
     $('stats').innerHTML = ''; $('home-today').innerHTML = '<p class="empty">미팅을 먼저 만들어 주세요.</p>'; $('home-recs').innerHTML = ''; return;
@@ -1060,17 +1076,45 @@ async function refresh(){
     if (first || sig !== S.sig){ S.sig = sig; COLS.forEach(col => { S[col] = Array.isArray(data[col]) ? data[col] : []; }); }
     else if (!modeChanged) return;
     scheduleRender();
-  } catch(e){ if (!S.api){ S.mode = 'offline'; scheduleRender(); } }
+  } catch(e){
+    if (e && e.code === 'need_read_key'){
+      /* 보기 비밀번호가 걸린 시트: 화면을 비우고 비밀번호를 받음 */
+      S.api = false; S.mode = 'locked'; S.sig = ''; COLS.forEach(col => { S[col] = []; });
+      scheduleRender();
+      if (!S.askedRead){ S.askedRead = true; openKey('read'); }
+      return;
+    }
+    if (!S.api){ S.mode = 'offline'; scheduleRender(); }
+  }
 }
 function lockEdit(){ S.key = null; try { localStorage.removeItem('mpb.key'); } catch(e){} render(); }
-function openKey(){ if (S.plat !== 'sheet' || !S.api) return; $('mk-pw').value = ''; $('mk-status').textContent = ''; $('mk-status').className = 'status-line'; openModal('m-key'); }
-$('btn-unlock').addEventListener('click', openKey);
-$('btn-lock').addEventListener('click', () => { lockEdit(); toast('편집을 잠갔습니다.'); });
+function lockAll(){ S.key = null; S.rkey = null; try { localStorage.removeItem('mpb.key'); localStorage.removeItem('mpb.rkey'); } catch(e){} S.askedRead = true; render(); refresh(); }
+function openKey(kind){
+  if (S.plat !== 'sheet') return;
+  kind = kind === 'read' || S.mode === 'locked' ? 'read' : 'edit';
+  if (kind === 'edit' && !S.api) return;
+  S.keyKind = kind;
+  $('mk-h').textContent = kind === 'read' ? '보기 비밀번호' : '편집 비밀번호';
+  $('mk-desc').textContent = kind === 'read'
+    ? '이 준비판은 팀 안에서만 봅니다. 보기 비밀번호(또는 편집 비밀번호)를 넣어 주세요. 이 브라우저에서는 다음에 다시 묻지 않습니다.'
+    : '추가·수정·삭제는 편집 비밀번호를 넣은 뒤에 할 수 있습니다. 이 브라우저에서는 다음에 다시 묻지 않습니다.';
+  $('mk-pw').placeholder = kind === 'read' ? '보기 비밀번호' : '편집 비밀번호';
+  $('mk-pw').value = ''; $('mk-status').textContent = ''; $('mk-status').className = 'status-line'; openModal('m-key');
+}
+$('btn-unlock').addEventListener('click', () => openKey());
+$('btn-lock').addEventListener('click', () => { lockAll(); toast('잠갔습니다. 이 브라우저에 저장된 비밀번호를 지웠습니다.'); });
 $('f-key').addEventListener('submit', async e => {
   e.preventDefault();
   const pw = $('mk-pw').value; if (!pw) return;
   const st = $('mk-status'); $('mk-ok').disabled = true; st.textContent = '확인하는 중…'; st.className = 'status-line';
   try {
+    if (S.keyKind === 'read'){
+      const j = await API.post({key: pw, op:'read'});
+      if (!j.data) throw {code:'server'};
+      S.rkey = pw; try { localStorage.setItem('mpb.rkey', pw); } catch(err){}
+      closeModal('m-key'); S.mode = 'loading'; render(); await refresh(); toast('불러왔습니다.');
+      return;
+    }
     await API.post({key: pw, op:'ping'});
     S.key = pw; try { localStorage.setItem('mpb.key', pw); } catch(err){}
     closeModal('m-key'); render(); toast('이제 고칠 수 있습니다. 바꾼 내용은 구글 시트에 저장됩니다.');

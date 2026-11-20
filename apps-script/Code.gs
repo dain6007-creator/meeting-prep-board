@@ -1,7 +1,8 @@
 /**
  * 고객 미팅 준비판 · 구글 시트 연결 (Apps Script 웹 앱)
  *
- * 읽기  GET  …/exec                 모든 탭을 JSON으로 돌려줌 (주소를 아는 누구나)
+ * 읽기  GET  …/exec                 모든 탭을 JSON으로 돌려줌. 스크립트 속성 READ_KEY 가 있으면 {ok:false, code:'need_read_key'}
+ *       POST …/exec  {key, op:'read'}  READ_KEY 또는 WRITE_KEY 와 key 가 같을 때 모든 탭을 돌려줌
  * 쓰기  POST …/exec  {key, op, …}   스크립트 속성 WRITE_KEY 와 key 가 같을 때만
  *       op: ping | add {col,id,data} | update {col,id,data} | del {col,id} | batch {ops:[…]}
  *           | ai {prompt}  (Claude API로 정리해 {ok, text} 돌려줌. 스크립트 속성 ANTHROPIC_API_KEY 필요)
@@ -9,6 +10,7 @@
  * 설치
  *  1. 이 시트에서 확장 프로그램 → Apps Script → 이 코드를 Code.gs 에 붙여 넣고 저장
  *  2. 프로젝트 설정(톱니바퀴) → 스크립트 속성 → 속성 추가: WRITE_KEY = 팀 편집 비밀번호
+ *     READ_KEY = 보기 비밀번호 (넣으면 비밀번호를 아는 사람만 볼 수 있음. 비워 두면 주소를 아는 누구나 봄)
  *     AI 바로 정리를 쓰려면 ANTHROPIC_API_KEY = Claude Console(platform.claude.com) API 키 (없으면 화면이 Claude 복사 방식으로 정리)
  *     (선택) CLAUDE_MODEL = 모델 ID. 비워 두면 claude-opus-5-5
  *  3. 배포 → 새 배포 → 유형 「웹 앱」 → 실행 계정 「나」 → 액세스 권한 「모든 사용자」 → 배포
@@ -27,21 +29,36 @@ const PFX = {customers: 'c', meetings: 'm', requests: 'r', questions: 'q', sched
 const TIME_KEYS = ['created', 'at', 'aiAt'];
 
 function doGet() {
+  if (prop_('READ_KEY')) return out_({ok: false, code: 'need_read_key'});
+  return out_(readAll_());
+}
+
+function readAll_() {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const tz = ss.getSpreadsheetTimeZone();
     const data = {};
     Object.keys(SCHEMA).forEach(function (col) { data[col] = readTab_(ss, col, tz); });
-    return out_({ok: true, data: data, at: new Date().toISOString()});
+    return {ok: true, data: data, at: new Date().toISOString()};
   } catch (err) {
-    return out_({ok: false, code: 'server', message: String(err)});
+    return {ok: false, code: 'server', message: String(err)};
   }
+}
+
+function prop_(name) {
+  return PropertiesService.getScriptProperties().getProperty(name) || '';
 }
 
 function doPost(e) {
   var req;
   try { req = JSON.parse(e.postData.contents); } catch (err) { return out_({ok: false, code: 'bad_json'}); }
-  const key = PropertiesService.getScriptProperties().getProperty('WRITE_KEY');
+  if (req.op === 'read') {
+    const rk = prop_('READ_KEY'), wk = prop_('WRITE_KEY'), k = String(req.key || '');
+    if (!rk || k === rk || (wk && k === wk)) return out_(readAll_());
+    Utilities.sleep(700);
+    return out_({ok: false, code: 'bad_key'});
+  }
+  const key = prop_('WRITE_KEY');
   if (!key) return out_({ok: false, code: 'no_key_set'});
   if (String(req.key || '') !== key) { Utilities.sleep(700); return out_({ok: false, code: 'bad_key'}); }
   if (req.op === 'ping') return out_({ok: true});
