@@ -4,10 +4,13 @@
  * 읽기  GET  …/exec                 모든 탭을 JSON으로 돌려줌 (주소를 아는 누구나)
  * 쓰기  POST …/exec  {key, op, …}   스크립트 속성 WRITE_KEY 와 key 가 같을 때만
  *       op: ping | add {col,id,data} | update {col,id,data} | del {col,id} | batch {ops:[…]}
+ *           | ai {prompt}  (Claude API로 정리해 {ok, text} 돌려줌. 스크립트 속성 ANTHROPIC_API_KEY 필요)
  *
  * 설치
  *  1. 이 시트에서 확장 프로그램 → Apps Script → 이 코드를 Code.gs 에 붙여 넣고 저장
  *  2. 프로젝트 설정(톱니바퀴) → 스크립트 속성 → 속성 추가: WRITE_KEY = 팀 편집 비밀번호
+ *     AI 바로 정리를 쓰려면 ANTHROPIC_API_KEY = Claude Console(platform.claude.com) API 키 (없으면 화면이 Claude 복사 방식으로 정리)
+ *     (선택) CLAUDE_MODEL = 모델 ID. 비워 두면 claude-opus-5-5
  *  3. 배포 → 새 배포 → 유형 「웹 앱」 → 실행 계정 「나」 → 액세스 권한 「모든 사용자」 → 배포
  *  4. 나오는 웹 앱 주소(…/exec)를 웹 화면의 config.js 의 API_URL 에 넣음
  *  코드를 고친 뒤에는 배포 → 배포 관리 → 연필 → 버전 「새 버전」 → 배포 (주소는 그대로)
@@ -42,6 +45,7 @@ function doPost(e) {
   if (!key) return out_({ok: false, code: 'no_key_set'});
   if (String(req.key || '') !== key) { Utilities.sleep(700); return out_({ok: false, code: 'bad_key'}); }
   if (req.op === 'ping') return out_({ok: true});
+  if (req.op === 'ai') return out_(ai_(req.prompt));
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(25000)) return out_({ok: false, code: 'busy'});
   try {
@@ -56,6 +60,40 @@ function doPost(e) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/* ---------- AI 정리 (Claude API) ---------- */
+function ai_(prompt) {
+  const props = PropertiesService.getScriptProperties();
+  const apiKey = props.getProperty('ANTHROPIC_API_KEY');
+  if (!apiKey) return {ok: false, code: 'no_ai_key'};
+  prompt = String(prompt || '');
+  if (!prompt) return {ok: false, code: 'bad_prompt'};
+  if (prompt.length > 60000) return {ok: false, code: 'prompt_too_large'};
+  const model = props.getProperty('CLAUDE_MODEL') || 'claude-opus-5-5';
+  const res = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: {'x-api-key': apiKey, 'anthropic-version': '2026-10-21'},
+    muteHttpExceptions: true,
+    payload: JSON.stringify({
+      model: model,
+      max_tokens: 16000,
+      output_config: {effort: 'low'},
+      messages: [{role: 'user', content: prompt}]
+    })
+  });
+  const status = res.getResponseCode();
+  var body = {};
+  try { body = JSON.parse(res.getContentText()); } catch (e) { /* 빈 응답 */ }
+  if (status === 200) {
+    if (body.stop_reason === 'refusal') return {ok: false, code: 'ai_blocked'};
+    const text = (body.content || []).filter(function (c) { return c.type === 'text'; }).map(function (c) { return c.text; }).join('');
+    return text ? {ok: true, text: text, model: model} : {ok: false, code: 'ai_failed'};
+  }
+  if (status === 401 || status === 403) return {ok: false, code: 'bad_ai_key'};
+  if (status === 429 || status === 529) return {ok: false, code: 'rate_limited'};
+  return {ok: false, code: 'ai_failed', status: status, message: String((body.error && body.error.message) || '').slice(0, 200)};
 }
 
 /* ---------- 쓰기 ---------- */
