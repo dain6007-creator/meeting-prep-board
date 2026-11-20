@@ -1017,7 +1017,7 @@ function claudeBridge(){
     });
   }};
 }
-/* 구글 시트 판: Apps Script(Gemini)로 바로 정리. 키가 없거나 실패하면 Claude 복사 방식으로 */
+/* 구글 시트 판: Apps Script(Claude API)로 바로 정리. 키가 없거나 실패하면 Claude 복사 방식으로 */
 function sheetAI(){
   const copy = claudeBridge(); let direct = true;
   return {async json(prompt, opts){
