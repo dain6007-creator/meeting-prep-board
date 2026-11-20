@@ -691,8 +691,24 @@ function normAI(x){
   return {summary: str(x.summary), notice: str(x.notice), report: str(x.report),
     tasks: (Array.isArray(x.tasks) ? x.tasks : []).map(t => ({title: str(t && t.title), owner: str(t && t.owner), due: ds(t && t.due)})).filter(t => t.title)};
 }
+/* 같은 미팅에 내용이 똑같은 기록이 이미 AI 정리돼 있으면 그 결과를 바로 다시 씀 (창·API 없이) */
+const normText = v => (typeof v === 'string' ? v : '').replace(/\r\n?/g, '\n').trim();
+function reuseAI(r){
+  const t = normText(r.text); if (!t) return null;
+  const p = S.records.filter(x => x.id !== r.id && x.meetingId === r.meetingId && x.summary && normText(x.text) === t)
+    .sort((a, b) => String(b.aiAt || '').localeCompare(String(a.aiAt || '')))[0];
+  return p ? normAI({summary: p.summary, notice: p.notice, report: p.report, tasks: (p.extract && p.extract.tasks) || []}) : null;
+}
 async function runAI(id){
   const r = S.records.find(x => x.id === id); if (!r || !S.sample) return;
+  const same = !r.summary && reuseAI(r);
+  if (same){
+    RV[id] = Object.assign(RV[id] || {}, {tab:'sum', draft: same.tasks, hideDraft: false});
+    if (canEdit()) await save(() => store.update('records', id, {summary: same.summary, notice: same.notice, report: same.report, extract: {tasks: same.tasks}, applied: false, aiAt: new Date().toISOString()}));
+    else RV[id].local = {summary: same.summary, notice: same.notice, report: same.report};
+    toast(`같은 회의록의 AI 정리 결과를 바로 넣었습니다. 할 일 ${same.tasks.length}건이 나왔습니다.`);
+    render(); return;
+  }
   if (AICTL[id]){ AICTL[id].abort(); return; }
   const M0 = build(); const mt = M0.meetings.find(m => m.id === r.meetingId) || M0.cur; if (!mt) return;
   const ctl = AICTL[id] = new AbortController();
