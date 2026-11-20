@@ -699,6 +699,65 @@ function reuseAI(r){
     .sort((a, b) => String(b.aiAt || '').localeCompare(String(a.aiAt || '')))[0];
   return p ? normAI({summary: p.summary, notice: p.notice, report: p.report, tasks: (p.extract && p.extract.tasks) || []}) : null;
 }
+/* 화면 안 자동 정리 (AI 없이 규칙으로): 문장에서 담당·「~까지」 기한을 찾아 할 일로, 확정·결정·일정 문장을 요약·공지·보고로 */
+function localSum(r, M0, mt){
+  const text = normText(r.text);
+  const base = new Date(r.at || Date.now()); const by = base.getFullYear(), bm = base.getMonth() + 1;
+  const toYmd = (y, m, d) => { m = +m; d = +d; if (!(m >= 1 && m <= 12 && d >= 1 && d <= 31)) return ''; if (!y){ y = by; if (m < bm - 6) y++; else if (m > bm + 6) y--; } return `${y}-${pad(m)}-${pad(d)}`; };
+  const DT = /(?:(\d{4})\s?[-./]\s?)?(\d{1,2})\s?(?:[-./]|월)\s?(\d{1,2})\s?일?(?:\s?\([월화수목금토일]\))?/.source;
+  const dueRe = new RegExp(DT + /\s?까지/.source);
+  const md = s => { if (!s) return ''; const [y, m, d] = s.split('-').map(Number); return `${m}/${d}(${WD[new Date(y, m - 1, d).getDay()]})`; };
+  const lines = text.split('\n').map(s => s.trim()).filter(Boolean);
+  let title = str(r.title) || '회의';
+  const head = lines[0] && lines[0].match(/^\[([^\]]+)\]/); if (head) title = head[1];
+  const att = (text.match(/참석\s*[:：]\s*([^\n]+)/) || [])[1] || '';
+  const owners = [...new Set([...(M0.owners || []), ...att.split(/[,，、·]/).map(s => s.trim())].filter(s => s && s.length <= 12))].sort((a, b) => b.length - a.length);
+  const tasks = [], facts = [], sections = [];
+  const cleanTitle = (s, owner, dueTxt) => {
+    let x = s;
+    if (owner){ x = x.replace(new RegExp(/\(\s*/.source + owner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + /\s*\)/.source), ''); x = x.split(owner).join(' ').replace(/^\s*(이|가|은|는|께서|님)\s+/, ' '); }
+    if (dueTxt) x = x.replace(dueTxt, ' ');
+    x = x.trim().replace(/\s*[.。]\s*$/, '').replace(/^\s*(받아서|그리고|또한|이후|먼저)\s+/, '').replace(/\s*드리기로\s*(함|했음)$/, ' 드리기').replace(/기로\s*(함|했음)$/, '기').replace(/\s+/g, ' ').trim();
+    return x.length > 40 ? x.slice(0, 39) + '…' : x;
+  };
+  /* 표 자료(「 | 」로 칸 구분) */
+  const rows = lines.filter(l => l.includes(' | ')).map(l => l.split(' | ').map(s => s.trim()));
+  if (rows.length >= 2){
+    const h = rows[0], col = re => h.findIndex(c => re.test(c));
+    const ci = col(/할\s?일|항목|요청|내용|제목/), co = col(/담당/), cd = col(/기한|마감|일자|날짜/), cs = col(/상태/);
+    let all = 0, done = 0;
+    rows.slice(1).forEach(c => {
+      const t = str(c[ci >= 0 ? ci : 0]); if (!t) return; all++;
+      if (cs >= 0 && /완료/.test(c[cs] || '')){ done++; return; }
+      const dm = str(c[cd]).match(new RegExp(DT));
+      tasks.push({title: t.length > 40 ? t.slice(0, 39) + '…' : t, owner: co >= 0 ? str(c[co]) : '', due: dm ? toYmd(dm[1], dm[2], dm[3]) : ''});
+    });
+    facts.push(`전체 ${all}건 중 완료 ${done}건, 남은 일 ${tasks.length}건`);
+  } else {
+    lines.forEach((l, i) => {
+      if (i === 0 && head) return;
+      if (/^참석\s*[:：]/.test(l)) return;
+      const sec = l.match(/^\d+[.)]\s*([^-].*)$/); if (sec && !/[.。]$/.test(sec[1]) && sec[1].length <= 30){ sections.push(sec[1].trim()); return; }
+      const body = l.replace(/^[-•·*▪]\s*/, '');
+      body.split(/(?<=[.。])\s+/).forEach(s => {
+        s = s.trim(); if (!s) return;
+        const owner = owners.find(o => { const k = s.indexOf(o); return k >= 0 && s[k + o.length] !== '님'; }) || '';
+        const dm = s.match(dueRe);
+        if (owner || dm){ const tt = cleanTitle(s, owner, dm && dm[0]); if (tt) tasks.push({title: tt, owner, due: dm ? toYmd(dm[1], dm[2], dm[3]) : ''}); }
+        else if (/확정|결정|합의|기로|예정|리허설|일정|약속/.test(s) || new RegExp(DT).test(s)) facts.push(s.replace(/[.。]\s*$/, ''));
+      });
+    });
+  }
+  const who = [...new Set(tasks.map(t => t.owner).filter(Boolean))];
+  const first = tasks.map(t => t.due).filter(Boolean).sort()[0] || '';
+  const summary = [`「${title}」 내용을 정리했습니다.`, sections.length ? `안건은 ${sections.join(', ')}입니다.` : '', facts.slice(0, 2).map(f => f + '.').join(' '),
+    `할 일은 ${tasks.length}건${who.length ? `(담당 ${who.join(', ')})` : ''}이고${first ? ` 가장 빠른 기한은 ${md(first)}입니다.` : ' 기한이 적힌 일은 없습니다.'}`].filter(Boolean).join(' ');
+  const notice = [`[${mt.title}] 회의 공유`, ...facts.slice(0, 3).map(f => '- ' + f), ...tasks.map(t => `- ${t.owner || '담당 미정'} · ${t.title} · ${md(t.due) || '기한 미정'}`)].slice(0, 11).join('\n');
+  const report = [`- ${title} 진행, ${sections.length ? `안건 ${sections.length}건 논의함` : '주요 내용 정리함'}`,
+    facts[0] ? `- ${facts[0]}` : '- 따로 확정된 사항 없음',
+    `- 후속 할 일 ${tasks.length}건 진행 필요${first ? `(가장 빠른 기한 ${md(first)})` : ''}`].join('\n');
+  return normAI({summary, notice, report, tasks});
+}
 async function runAI(id){
   const r = S.records.find(x => x.id === id); if (!r || !S.sample) return;
   const same = !r.summary && reuseAI(r);
@@ -714,11 +773,13 @@ async function runAI(id){
   const ctl = AICTL[id] = new AbortController();
   render();
   try {
-    const d = normAI(await S.sample.json(aiPrompt(M0, r, mt), {signal: ctl.signal, cache: {gcTime: 12 * 3600 * 1000}}));
+    let d, auto = false;
+    try { d = normAI(await S.sample.json(aiPrompt(M0, r, mt), {signal: ctl.signal, cache: {gcTime: 12 * 3600 * 1000}})); }
+    catch(e){ if (!(e && e.code === 'no_direct')) throw e; d = localSum(r, M0, mt); auto = true; }
     RV[id] = Object.assign(RV[id] || {}, {tab:'sum', draft: d.tasks, hideDraft: false});
     if (canEdit()){
       await save(() => store.update('records', id, {summary: d.summary, notice: d.notice, report: d.report, extract: {tasks: d.tasks}, applied: false, aiAt: new Date().toISOString()}));
-      toast(`정리했습니다. 할 일 ${d.tasks.length}건이 나왔습니다.`);
+      toast(`${auto ? '자동 정리했습니다' : '정리했습니다'}. 할 일 ${d.tasks.length}건이 나왔습니다.`);
     } else {
       RV[id].local = {summary: d.summary, notice: d.notice, report: d.report};
       toast('정리했습니다. 편집 권한이 없어 이 화면에만 보입니다.');
@@ -1033,9 +1094,9 @@ function claudeBridge(){
     });
   }};
 }
-/* 구글 시트 판: Apps Script(Claude API)로 바로 정리. 키가 없거나 실패하면 Claude 복사 방식으로 */
+/* 구글 시트 판: Apps Script(Claude API)로 바로 정리. 키가 없거나 실패하면 창 없이 화면 안 자동 정리(no_direct) */
 function sheetAI(){
-  const copy = claudeBridge(); let direct = true;
+  let direct = true;
   return {async json(prompt, opts){
     const sig = opts && opts.signal;
     if (direct && S.key && API.url){
@@ -1049,7 +1110,7 @@ function sheetAI(){
         if (c === 'no_ai_key' || c === 'server') direct = false;
       }
     }
-    return copy.json(prompt, opts);
+    throw {code:'no_direct'};
   }};
 }
 function parseAnswer(t){
